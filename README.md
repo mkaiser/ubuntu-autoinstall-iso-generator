@@ -22,7 +22,7 @@ In my use case we have multiple headless servers to provision. We use this autoi
 
 ## Step 1
 In `user-data.trecs`  initial users (cape and trecs) are created with encrypted passwords. See the comments in the file how to generate the encrypted passwords. You can also add ssh keys for the users if you want to be able to ssh into the machine after installation:
-```
+```yaml
 users:
   - name: trecs
     gecos: trecs developer
@@ -86,7 +86,7 @@ Using openWRT you can set the hostname via:
 
 
 Below are some code snippets responsible for this behaviour: 
-```
+```yaml
 late-commands:
   # Set MAC-based hostname before first boot so the router sees it on the first DHCP request
   - |
@@ -105,15 +105,15 @@ write_files:
 ```
 
 On first boot the RECSDaemon is automatically installed. RECSDaemon is the communication interface between our servers BMC and the Ubuntu OS. This is probably not your use case. Just comment it :)
-```
-- cd /tmp && git clone https://github.com/christmann/RECSDaemon.git && cd RECSDaemon && mkdir build && cd build && cmake .. && make install
+```yaml
+cd /tmp && git clone https://github.com/christmann/RECSDaemon.git && cd RECSDaemon && mkdir build && cd build && cmake .. && make install
 ```
 
 # Add new ubuntu versions:
 
 Easy! See the array in `generate_autoinstall_iso.sh` and the desired versions. Don't forget to make a PR :)
 
-```
+```bash
 declare -A ubuntu_releases=(
   [questing]="25.10"
   [reso
