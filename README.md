@@ -1,17 +1,17 @@
 
 # Project Goal
 
-Simplify the process of creating an ISO auto install image for ubuntu server or desktop versions to install the OS on local or virtual machines without the need of any user interaction during the process.
+Simplify the process of creating an ISO auto install image for ubuntu server or desktop versions to install the OS on local or virtual machines without the need of any user interaction during the process. Auto-provision users and SSH certificates.
 
 # My use case
 
-In my use case we have multiple headless servers to provision. We use this autoinstall isos, flash them directly on the servers SSD and boot them. After a while we set a hostname in the router for the machines. The host name will be adapted after a reboot.  
+In my use case we have multiple headless servers to provision. We use this autoinstall ISO, flash them directly on the servers SSD and boot them. After a while we set a hostname in the router for the machines. The host name will be adapted after a reboot.  
 
 # Approach
 
 - A minimal (debian-slim) devcontainer provides the necessary tools to create an autoinstall iso image.
-- The user configures the desired setting in user-data.trecs(you can rename it of course!)
-- The 'generate_autoinstall_iso.sh' script is used to download the specified ubuntu flavor and versions. The original Ubuntu iso images are patched with a user-data.trecs and modifications to the GRUB bootloader to enable autoboot to RAM. The tool `xorriso` is used  to create the autoinstall iso images.
+- The user configures the desired setting including users, ssh certificates, network settings and applications installs in user-data.trecs (you can rename it of course!)
+- The `generate_autoinstall_iso.sh` script is used to download the specified ubuntu flavor and versions. The original Ubuntu iso images are patched with a user-data.trecs and modifications to the GRUB bootloader to enable autoboot to RAM. The tool `xorriso` is used  to create the autoinstall iso images.
 
 # Usage
 
