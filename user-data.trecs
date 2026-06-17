@@ -1,0 +1,126 @@
+#cloud-config
+autoinstall:
+  version: 1
+  update: yes
+  keyboard: { layout: de, toggle: null, variant: "" }
+  locale: de_DE.UTF-8
+
+  identity:
+    hostname: ubuntu-autoinstall-provisioning  # overridden by late-commands with MAC-based hostname
+    username: trecs-install
+    # password hash created using: openssl passwd -6 YOUR_PASSWORD
+    password: "$6$wZbZSrDA1OWzPZ7t$qQcjn2sIw1yY8PmluT5dfocYBszOWLrqwXsLXLvrQCJ7umaCGVP5S.lWdGGzQY.lEKbGweGiAZHBjazZGy4S9."
+
+  ssh:
+    allow-pw: true
+    install-server: true
+
+  network:
+    version: 2
+    ethernets:
+      all-eths:
+        match:
+          name: "en*"
+        dhcp4: true
+        dhcp6: true
+        dhcp4-overrides:
+          use-hostname: true  # accept hostname pushed by router's DHCP
+
+  storage:
+    layout:
+      name: direct  # install to the first (only) available disk
+
+  late-commands:
+    # Set MAC-based hostname before first boot so the router sees it on the first DHCP request
+    - |
+      iface=$(ls /sys/class/net | grep -E '^(en|eth|ens|eno)' | grep -v lo | head -n1)
+      mac=$(cat /sys/class/net/$iface/address | tr -d ':')
+      hostname="ubuntu-autoinstall-$mac"
+      echo "$hostname" > /target/etc/hostname
+      sed -i '/^127\.0\.1\.1/d' /target/etc/hosts
+      printf '127.0.1.1\t%s\n' "$hostname" >> /target/etc/hosts
+
+  user-data:  # cloud-init runs after first reboot
+    timezone: Europe/Berlin
+    disable_root: false
+    users:
+      - name: trecs
+        gecos: trecs developer
+        groups: users, admin, docker, sudo
+        sudo: "ALL=(ALL) NOPASSWD:ALL"
+        shell: /bin/bash
+        # password hash created using: openssl passwd -6 YOUR_PASSWORD
+        passwd: "$6$wZbZSrDA1OWzPZ7t$qQcjn2sIw1yY8PmluT5dfocYBszOWLrqwXsLXLvrQCJ7umaCGVP5S.lWdGGzQY.lEKbGweGiAZHBjazZGy4S9."
+        lock_passwd: false
+        ssh_authorized_keys:
+          - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDSH6TV6Cg0FkJFw3ModUCRQcd9J+QZ5bN3Z8xM2/mti ssh-recs-testbed
+
+      - name: cape
+        gecos: CAPE developer
+        groups: users, admin, docker, sudo
+        sudo: "ALL=(ALL) NOPASSWD:ALL"
+        shell: /bin/bash
+        ssh_authorized_keys:
+          - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICiqA1P6lJCO4oGdOPI6ZEcbfJXxy8+QAAkxNhScIMYa ssh-trecs-gateway-cape-fwd
+        # password hash created using: openssl passwd -6 YOUR_PASSWORD
+        passwd: "$6$3EtT/sCyINKkNHsN$myguES8hypTyxKxfe4GEZMDcq.6orAauiAmAxElNgXSDzXFenXyzW2U3TOYfPofXvLCp8lzV0keJCdzbwWDZY."
+        lock_passwd: false
+
+    write_files:
+      - path: /usr/local/bin/dhcp-hostname-refresh.sh
+        permissions: "0755"
+        content: |
+          #!/bin/bash
+          for iface in $(networkctl list --no-legend | awk '$3=="ether" && $4=="routable" {print $2}'); do
+            ifindex=$(cat /sys/class/net/$iface/ifindex 2>/dev/null)
+            lease_file="/run/systemd/netif/leases/$ifindex"
+            if [[ -f "$lease_file" ]]; then
+              dhcp_hostname=$(grep '^HOSTNAME=' "$lease_file" | cut -d= -f2)
+              if [[ -n "$dhcp_hostname" ]]; then
+                echo "Setting hostname to '$dhcp_hostname' (from DHCP lease on $iface)"
+                hostnamectl set-hostname "$dhcp_hostname"
+                break
+              else
+                echo "No DHCP hostname in lease for $iface, skipping"
+              fi
+            fi
+          done
+
+      - path: /etc/systemd/system/dhcp-hostname-refresh.service
+        permissions: "0644"
+        content: |
+          [Unit]
+          Description=Re-apply DHCP hostname (option 12) after boot
+          After=network-online.target systemd-hostnamed.service
+          Wants=network-online.target
+
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/local/bin/dhcp-hostname-refresh.sh
+          RemainAfterExit=yes
+
+          [Install]
+          WantedBy=multi-user.target
+
+    runcmd:
+      - systemctl daemon-reload
+      - systemctl enable dhcp-hostname-refresh.service
+      # install RECSDaemon from source
+      - cd /tmp && git clone https://github.com/christmann/RECSDaemon.git && cd RECSDaemon && mkdir build && cd build && cmake .. && make install
+      - systemctl daemon-reload
+      - systemctl enable RECSDaemon.service
+      - systemctl start RECSDaemon.service
+
+    packages:
+      # build toolchain for RECSDaemon
+      - build-essential
+      - libssl-dev
+      - pkg-config
+      - cmake
+      - git
+      # runtime
+      - docker.io
+      - python3-pip
+
+    package_update: true
+    package_upgrade: true
