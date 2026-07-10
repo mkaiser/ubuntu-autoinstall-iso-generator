@@ -38,17 +38,21 @@ users:
 
 ## Step 2
 
-Invoke ./generate_autoinstall_iso.sh `<flavor>` `<version>` in the VScode terminal.
+Invoke ./generate_autoinstall_iso.sh `<flavor>` `<version>` `<tty>` `[baudrate]` in the VScode terminal.
 
   `flavor`   : `server` | `desktop`
 
   `version`  : codename (e.g. `questing`) or numeric (e.g. `25.10`)
 
+  `tty`      : serial console TTY (e.g. `ttyS2`)
+
+  `baudrate` : serial console speed (e.g. `115200n8`, default: `115200n8`)
+
 After downloading the original iso, the patching progress will take around 2-4 minutes. 
 
 
 Example: 
-`./generate_autoinstall_iso.sh server 26.04` will create a timestamped ISO file in the root folder, e.g., `ubuntu_26.04_server_autoinstall_2026-06-16__19-48.iso` 
+`./generate_autoinstall_iso.sh server 26.04 ttyS2` will create a timestamped ISO file in the root folder, e.g., `ubuntu_26.04_server_ttys2_autoinstall_2026-06-16__19-48.iso` 
 
 ## Step 3
 
