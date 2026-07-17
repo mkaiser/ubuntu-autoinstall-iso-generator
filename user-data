@@ -5,12 +5,6 @@ autoinstall:
   keyboard: { layout: de, toggle: null, variant: "" }
   locale: de_DE.UTF-8
 
-  identity:
-    hostname: ubuntu-autoinstall-provisioning  # overridden by late-commands with MAC-based hostname
-    username: trecs-install
-    # password hash created using: openssl passwd -6 YOUR_PASSWORD
-    password: "$6$wZbZSrDA1OWzPZ7t$qQcjn2sIw1yY8PmluT5dfocYBszOWLrqwXsLXLvrQCJ7umaCGVP5S.lWdGGzQY.lEKbGweGiAZHBjazZGy4S9."
-
   ssh:
     allow-pw: true
     install-server: true

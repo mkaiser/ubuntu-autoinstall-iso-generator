@@ -34,26 +34,21 @@ declare -A ubuntu_releases=(
 )
 
 usage() {
-  echo "Usage: $0 <flavor> <version> <tty> [baudrate]"
-  echo "  flavor   : server | desktop"
+  echo "Usage: $0 <flavor> <version> [tty] [baudrate]"
   echo "  version  : codename (e.g. questing) or numeric (e.g. 25.10)"
-  echo "  tty      : serial console TTY (e.g. ttyS2)"
+  echo "  flavor   : server | desktop"
+  echo "  tty      : serial console TTY (e.g. ttyS2). Omit to use the default kernel console (no serial redirection)."
   echo "  baudrate : serial console speed (e.g. 115200n8, default: 115200n8)"
   echo "  Known codenames: ${!ubuntu_releases[*]}"
   exit 1
 }
 
-[[ $# -lt 3 || $# -gt 4 ]] && usage
+[[ $# -lt 2 || $# -gt 4 ]] && usage
 
-flavor="$1"
-version_arg="$2"
-console_tty="$3"
+version_arg="$1"
+flavor="$2"
+console_tty="${3:-}"
 console_baudrate="${4:-115200n8}"
-
-if [[ -z "$console_tty" ]]; then
-  echo "ERROR: tty must not be empty"
-  exit 1
-fi
 
 # Resolve version_arg: accept codename or numeric version
 if [[ -v ubuntu_releases["$version_arg"] ]]; then
@@ -85,8 +80,12 @@ esac
 
 source_iso="ubuntu-${ubuntu_version}-${iso_suffix}"
 source_iso_url="https://releases.ubuntu.com/${ubuntu_version}/${source_iso}"
-console_tty_filename="$(printf '%s' "$console_tty" | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]')"
-output_iso="ubuntu_${ubuntu_version}_${flavor}_${console_tty_filename}_autoinstall_${timestamp}.iso"
+output_iso="ubuntu_${ubuntu_version}_${flavor}"
+if [[ -n "$console_tty" ]]; then
+  console_tty_filename="$(printf '%s' "$console_tty" | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]')"
+  output_iso+="_${console_tty_filename}"
+fi
+output_iso+="_autoinstall_${timestamp}.iso"
 
 if ! command -v xorriso &>/dev/null; then
   echo "ERROR: xorriso not found. Install it with: sudo apt install xorriso"
@@ -104,7 +103,7 @@ else
 fi
 
 # ── Step 2: Set up work directory ────────────────────────────────────────────
-work_dir=$(mktemp -d /tmp/trecs_iso_XXXXXX)
+work_dir=$(mktemp -d "/tmp/trecs_iso_${output_iso}.XXXXXX")
 cleanup() { rm -rf "$work_dir"; }
 trap cleanup EXIT
 
@@ -117,23 +116,38 @@ chmod -R u+w "$work_dir"
 # - timeout=0              : boot immediately, no interactive menu (headless)
 # - autoinstall            : trigger subiquity unattended installer
 # - ds=nocloud\;s=/cdrom/nocloud/ : point cloud-init at the seed dir baked into the ISO
-# - console=${console_tty},${console_baudrate} : route kernel output to the selected serial port
+#                            (the ';' must be backslash-escaped: GRUB's linux command
+#                            parses an unescaped ';' as a statement separator, which
+#                            would silently truncate the datasource arg and drop the seed path)
+# - console=${console_tty},${console_baudrate} : route kernel output to the selected serial port (optional; omitted if no tty given)
 # - toram                  : copy live system to RAM so the SSD can be wiped + reinstalled
-console="${console_tty},${console_baudrate}"
-echo "Routing kernel console output to console=${console}"
+extra_cmdline="autoinstall toram ds=nocloud\\\\;s=/cdrom/nocloud/"
+if [[ -n "$console_tty" ]]; then
+  console="${console_tty},${console_baudrate}"
+  echo "Routing kernel console output to console=${console}"
+  extra_cmdline+=" console=${console}"
+else
+  echo "No serial console configured; using default kernel console."
+fi
+escaped_cmdline="${extra_cmdline//\//\\/}"
+echo "  escaped_cmdline=${escaped_cmdline}"
+
 echo "Patching grub.cfg ..."
-sed -i \
-  -e 's/^set timeout=.*/set timeout=0/' \
-  -e 's/^set timeout_style=.*/set timeout_style=countdown/' \
-  -e "/linux.*casper\\/vmlinuz/s/$/ autoinstall ds=nocloud\\\\;s=\\/cdrom\\/nocloud\\/ console=${console} toram/" \
-  "${work_dir}/boot/grub/grub.cfg"
+for grub_cfg in "${work_dir}/boot/grub/grub.cfg" "${work_dir}/boot/grub/loopback.cfg"; do
+  [[ -f "$grub_cfg" ]] || continue
+  sed -i \
+    -e 's/^set timeout=.*/set timeout=0/' \
+    -e 's/^set timeout_style=.*/set timeout_style=countdown/' \
+    -e "/linux.*casper\\/vmlinuz/s/---/${escaped_cmdline} ---/" \
+    "$grub_cfg"
+done
 
 # ── Step 5: Inject nocloud seed ───────────────────────────────────────────────
 # user-data : the autoinstall / cloud-init config
 # meta-data : required by the nocloud datasource (can be empty)
 echo "Injecting autoinstall config ..."
 mkdir -p "${work_dir}/nocloud"
-cp "$(pwd)/user-data.trecs" "${work_dir}/nocloud/user-data"
+cp "$(pwd)/user-data" "${work_dir}/nocloud/user-data"
 touch "${work_dir}/nocloud/meta-data"
 
 # ── Step 6: Repack with correct El Torito / EFI boot structure ───────────────

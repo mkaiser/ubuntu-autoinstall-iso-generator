@@ -10,8 +10,8 @@ In my use case we have multiple headless servers to provision. We use this autoi
 # Approach
 
 - A minimal (debian-slim) devcontainer provides the necessary tools to create an autoinstall iso image.
-- The user configures the desired setting including users, ssh certificates, network settings and applications installs in user-data.trecs (you can rename it of course!)
-- The `generate_autoinstall_iso.sh` script is used to download the specified ubuntu flavor and versions. The original Ubuntu iso images are patched with a user-data.trecs and modifications to the GRUB bootloader to enable autoboot to RAM. The tool `xorriso` is used  to create the autoinstall iso images.
+- The user configures the desired setting including users, ssh certificates, network settings and applications installs in user-data (you can rename it of course!)
+- The `generate_autoinstall_iso.sh` script is used to download the specified ubuntu flavor and versions. The original Ubuntu iso images are patched with a user-data and modifications to the GRUB bootloader to enable autoboot to RAM. The tool `xorriso` is used  to create the autoinstall iso images.
 
 # Usage
 
@@ -21,7 +21,7 @@ In my use case we have multiple headless servers to provision. We use this autoi
 - Open the project in VScode and open the devcontainer. The devcontainer will install all necessary tools to create the autoinstall iso images.
 
 ## Step 1
-In `user-data.trecs`  initial users (cape and trecs) are created with encrypted passwords. See the comments in the file how to generate the encrypted passwords. You can also add ssh keys for the users if you want to be able to ssh into the machine after installation:
+In `user-data`  initial users (cape and trecs) are created with encrypted passwords. See the comments in the file how to generate the encrypted passwords. You can also add ssh keys for the users if you want to be able to ssh into the machine after installation:
 ```yaml
 users:
   - name: trecs
@@ -38,13 +38,13 @@ users:
 
 ## Step 2
 
-Invoke ./generate_autoinstall_iso.sh `<flavor>` `<version>` `<tty>` `[baudrate]` in the VScode terminal.
-
-  `flavor`   : `server` | `desktop`
+Invoke ./generate_autoinstall_iso.sh `<flavor>` `<version>` `[tty]` `[baudrate]` in the VScode terminal.
 
   `version`  : codename (e.g. `questing`) or numeric (e.g. `25.10`)
 
-  `tty`      : serial console TTY (e.g. `ttyS2`)
+  `flavor`   : `server` | `desktop`
+
+  `tty`      : serial console TTY (e.g. `ttyS2`). Omit to skip serial console redirection and use the default kernel console.
 
   `baudrate` : serial console speed (e.g. `115200n8`, default: `115200n8`)
 
@@ -53,6 +53,8 @@ After downloading the original iso, the patching progress will take around 2-4 m
 
 Example: 
 `./generate_autoinstall_iso.sh server 26.04 ttyS2` will create a timestamped ISO file in the root folder, e.g., `ubuntu_26.04_server_ttys2_autoinstall_2026-06-16__19-48.iso` 
+
+`./generate_autoinstall_iso.sh server 26.04` (no tty) will create e.g. `ubuntu_26.04_server_autoinstall_2026-06-16__19-48.iso` with no serial console redirection.
 
 ## Step 3
 
