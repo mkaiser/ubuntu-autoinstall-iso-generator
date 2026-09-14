@@ -29,12 +29,17 @@ start_time=$(date +%s)
 # All known Ubuntu releases.
 # Current releases + codenames: https://releases.ubuntu.com/
 declare -A ubuntu_releases=(
-  [questing]="25.10"
-  [resolute]="26.04"
+  # codename: release version newest dot release
+  [jammy]="22.04 22.04.5"
+  [noble]="24.04 24.04.5"
+  [onyx]="24.10 24.10"
+  [pinnacle]="25.04 25.04"
+  [questing]="25.10 25.10"
+  [resolute]="26.04 26.04"
 )
 
 usage() {
-  echo "Usage: $0 <flavor> <version> [tty] [baudrate]"
+  echo "Usage: $0 <version> <flavor> [tty] [baudrate]"
   echo "  version  : codename (e.g. questing) or numeric (e.g. 25.10)"
   echo "  flavor   : server | desktop"
   echo "  tty      : serial console TTY (e.g. ttyS2). Omit to use the default kernel console (no serial redirection)."
@@ -53,14 +58,16 @@ console_baudrate="${4:-115200n8}"
 # Resolve version_arg: accept codename or numeric version
 if [[ -v ubuntu_releases["$version_arg"] ]]; then
   code_name="$version_arg"
-  ubuntu_version="${ubuntu_releases[$code_name]}"
+  read -r ubuntu_version newest_dot_release <<< "${ubuntu_releases[$code_name]}"
 else
   # Treat as numeric version; find the matching codename for display
   ubuntu_version="$version_arg"
   code_name=""
   for cn in "${!ubuntu_releases[@]}"; do
-    if [[ "${ubuntu_releases[$cn]}" == "$version_arg" ]]; then
+    read -r release_version release_dot_release <<< "${ubuntu_releases[$cn]}"
+    if [[ "$release_version" == "$version_arg" ]]; then
       code_name="$cn"
+      newest_dot_release="$release_dot_release"
       break
     fi
   done
@@ -78,8 +85,8 @@ case "$flavor" in
     exit 1
 esac
 
-source_iso="ubuntu-${ubuntu_version}-${iso_suffix}"
-source_iso_url="https://releases.ubuntu.com/${ubuntu_version}/${source_iso}"
+source_iso="ubuntu-${newest_dot_release}-${iso_suffix}"
+source_iso_url="https://releases.ubuntu.com/${newest_dot_release}/${source_iso}"
 output_iso="ubuntu_${ubuntu_version}_${flavor}"
 if [[ -n "$console_tty" ]]; then
   console_tty_filename="$(printf '%s' "$console_tty" | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]')"

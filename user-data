@@ -1,7 +1,9 @@
 #cloud-config
 autoinstall:
   version: 1
-  update: yes
+  # dont fetch/update the installer. So we can install without internet access.
+  # We can do cloud-init updates later - see package_up[dat|grad]e below
+  update: no
   keyboard: { layout: de, toggle: null, variant: "" }
   locale: de_DE.UTF-8
 
@@ -17,6 +19,10 @@ autoinstall:
           name: "en*"
         dhcp4: true
         dhcp6: true
+        # Do not block the install waiting for a lease on a NIC that may have no
+        # cable. Without this, every matched en* interface is treated as
+        # required and the installer stalls on network-online.
+        optional: true
         dhcp4-overrides:
           use-hostname: true  # accept hostname pushed by router's DHCP
 
@@ -27,8 +33,49 @@ autoinstall:
   late-commands:
     # Set MAC-based hostname before first boot so the router sees it on the first DHCP request
     - |
-      iface=$(ls /sys/class/net | grep -E '^(en|eth|ens|eno)' | grep -v lo | head -n1)
-      mac=$(cat /sys/class/net/$iface/address | tr -d ':')
+      # Pick the NIC whose MAC the router will actually see, in priority order:
+      #   1. has an IPv4 address (it got a DHCP lease -> guaranteed match)
+      #   2. has carrier (cable plugged in)
+      #   3. lexicographically first physical NIC (no cable anywhere; still
+      #      yields a usable, if arbitrary, hostname)
+      # Only real devices are considered: /sys/class/net/*/device exists just for
+      # physical (PCI/USB) NICs, which filters out bridges, bonds, veth, docker0.
+      pick_iface() {
+        cands=""
+        for i in /sys/class/net/*; do
+          i=$(basename "$i")
+          case "$i" in en*|eth*) ;; *) continue ;; esac
+          [ -e "/sys/class/net/$i/device" ] || continue
+          cands="$cands $i"
+        done
+        # 1. carries an IPv4 address
+        for i in $cands; do
+          if ip -4 -o addr show dev "$i" scope global 2>/dev/null | grep -q inet; then
+            echo "$i"; return 0
+          fi
+        done
+        # 2. link up
+        for i in $cands; do
+          if [ "$(cat "/sys/class/net/$i/carrier" 2>/dev/null)" = "1" ]; then
+            echo "$i"; return 0
+          fi
+        done
+        # 3. first physical NIC
+        for i in $cands; do echo "$i"; return 0; done
+        return 1
+      }
+
+      iface=$(pick_iface)
+      if [ -z "$iface" ]; then
+        echo "late-commands: no physical ethernet NIC found, leaving hostname unchanged" >&2
+        exit 0
+      fi
+      mac=$(tr -d ':' < "/sys/class/net/$iface/address")
+      if [ -z "$mac" ]; then
+        echo "late-commands: could not read MAC of $iface, leaving hostname unchanged" >&2
+        exit 0
+      fi
+      echo "late-commands: using $iface (mac $mac) for hostname"
       hostname="ubuntu-autoinstall-$mac"
       echo "$hostname" > /target/etc/hostname
       sed -i '/^127\.0\.1\.1/d' /target/etc/hosts
@@ -100,10 +147,10 @@ autoinstall:
       - systemctl daemon-reload
       - systemctl enable dhcp-hostname-refresh.service
       # install RECSDaemon from source
-      - cd /tmp && git clone https://github.com/christmann/RECSDaemon.git && cd RECSDaemon && mkdir build && cd build && cmake .. && make install
-      - systemctl daemon-reload
-      - systemctl enable RECSDaemon.service
-      - systemctl start RECSDaemon.service
+      # - cd /tmp && git clone https://github.com/christmann/RECSDaemon.git && cd RECSDaemon && mkdir build && cd build && cmake .. && make install
+      # - systemctl daemon-reload
+      # - systemctl enable RECSDaemon.service
+      # - systemctl start RECSDaemon.service
 
     packages:
       # build toolchain for RECSDaemon

@@ -83,7 +83,7 @@ I assume that the BIOS of the machine is configured to boot automatically from U
 
 Wait for 10-15 minutes. 
 
-The machine will auto-install, reboot, update the OS and you will see a machine "ubuntu-autoinstall-$mac" in your network. The $mac (MAC Address) of the first ethernet device helps us to set a DHCP hostname in the router, which will automatically propagate to the Ubuntu as new hostname after a reboot. 
+The machine will auto-install, reboot, and you will see a machine "ubuntu-autoinstall-$mac" in your network. The $mac (MAC Address) of the first ethernet device helps us to set a DHCP hostname in the router, which will automatically propagate to the Ubuntu as new hostname after a reboot. 
 
 Using openWRT you can set the hostname via:
   1. `Overview:` `Active DHCP Leases` --> find the new node and click on `Set Static`
@@ -96,24 +96,32 @@ Below are some code snippets responsible for this behaviour:
 late-commands:
   # Set MAC-based hostname before first boot so the router sees it on the first DHCP request
   - |
-    iface=$(ls /sys/class/net | grep -E '^(en|eth|ens|eno)' | grep -v lo | head -n1)
-    mac=$(cat /sys/class/net/$iface/address | tr -d ':')
+    # Picks the NIC the router will actually see: prefers one that already has
+    # an IPv4 lease, then one with carrier (cable in), then the first physical
+    # NIC. Virtual interfaces (bridges, bonds, veth, docker0) are skipped.
+    iface=$(pick_iface)
+    mac=$(tr -d ':' < "/sys/class/net/$iface/address")
     hostname="ubuntu-autoinstall-$mac"
     echo "$hostname" > /target/etc/hostname
     sed -i '/^127\.0\.1\.1/d' /target/etc/hosts
     printf '127.0.1.1\t%s\n' "$hostname" >> /target/etc/hosts
-
-...
-write_files:
-  - path: /usr/local/bin/dhcp-hostname-refresh.sh
-  ... 
-  - path: /etc/systemd/system/dhcp-hostname-refresh.service
 ```
 
-On first boot the RECSDaemon is automatically installed. RECSDaemon is the communication interface between our servers BMC and the Ubuntu OS. This is probably not your use case. Just comment it :)
-```yaml
-cd /tmp && git clone https://github.com/christmann/RECSDaemon.git && cd RECSDaemon && mkdir build && cd build && cmake .. && make install
-```
+# Behaviour without network
+
+The image is intentionally minimal and does nothing beyond the base install:
+
+- **`update: no`**, so subiquity never tries to fetch a newer installer snap.
+- **`optional: true` on the NICs**, so the installer does not wait on an
+  interface that has no cable.
+- **No packages, no `runcmd`, no `package_update`/`package_upgrade`.** Nothing
+  runs on first boot beyond user/SSH setup and the MAC-based hostname in
+  `late-commands`. Nothing waits on or depends on network access after install.
+
+If you need to install packages or run first-boot setup, keep in mind cloud-init's
+`runcmd` and `packages` only run **once**. If the network is down for that boot,
+those steps are skipped and are *not* retried on later boots — anything that must
+survive a flaky first boot belongs in a retrying systemd unit, not in `runcmd`.
 
 # Add new ubuntu versions:
 
