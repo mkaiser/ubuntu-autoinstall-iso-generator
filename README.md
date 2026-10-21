@@ -38,27 +38,64 @@ users:
 
 ## Step 2
 
-Invoke ./generate_autoinstall_iso.sh `<flavor>` `<version>` `[tty]` `[baudrate]` in the VScode terminal.
+Invoke ./generate_autoinstall_iso.sh `<version>` `<flavor>` `[tty]` `[baudrate]` in the VScode terminal.
 
   `version`  : codename (e.g. `questing`) or numeric (e.g. `25.10`)
 
-  `flavor`   : `server` | `desktop`
+  `flavor`   : `server` | `desktop` (desktop needs 24.04 or newer: older desktop ISOs use the Ubiquity installer, which does not support autoinstall)
 
   `tty`      : serial console TTY (e.g. `ttyS2`). Omit to skip serial console redirection and use the default kernel console.
 
   `baudrate` : serial console speed (e.g. `115200n8`, default: `115200n8`)
 
+The script picks the newest point release of the given version (e.g. `24.04.5` for server, `24.04.5.1` for desktop) from the release's `SHA256SUMS`. That file is verified against the Ubuntu CD image signing key shipped in `keys/`, and the downloaded ISO is verified against it. Downloads go to a `.part` file that is resumed after an abort and only becomes the cached ISO once its checksum matches. With a cached ISO and cached `SHA256SUMS` the script also works without network access.
+
 After downloading the original iso, the patching progress will take around 2-4 minutes. 
+
+The ISO is extracted below `$TMPDIR` (default `/tmp`), which needs about the ISO's size in free space. If `/tmp` is a small RAM disk, use e.g. `TMPDIR=/var/tmp ./generate_autoinstall_iso.sh ...`.
 
 
 Example: 
-`./generate_autoinstall_iso.sh server 26.04 ttyS2` will create a timestamped ISO file in the root folder, e.g., `ubuntu_26.04_server_ttys2_autoinstall_2026-06-16__19-48.iso` 
+`./generate_autoinstall_iso.sh 26.04 server ttyS2` will create a timestamped ISO file in the root folder, e.g., `ubuntu_26.04_server_ttys2_autoinstall_2026-06-16__19-48.iso` 
 
-`./generate_autoinstall_iso.sh server 26.04` (no tty) will create e.g. `ubuntu_26.04_server_autoinstall_2026-06-16__19-48.iso` with no serial console redirection.
+`./generate_autoinstall_iso.sh 26.04 server` (no tty) will create e.g. `ubuntu_26.04_server_autoinstall_2026-06-16__19-48.iso` with no serial console redirection.
 
 ## Step 3
 
 Flash on USB or directly on M.2 SSD. I recommend `balena etcher` 
+
+### Flashing with `dd`
+
+`dd` overwrites the target without asking, so identifying the right device is the most important step.
+
+1. Find the SSD: list the disks before and after plugging it in (e.g. via a USB adapter or M.2 enclosure). The new device is the target. Prefer its stable name from `/dev/disk/by-id/`, since `sdX` names can change between calls. Always use the **whole device** (`sdb`), never a partition (`sdb1`).
+   ```bash
+   lsblk -d -o NAME,SIZE,MODEL,SERIAL,TRAN   # before and after plugging in
+   ls -l /dev/disk/by-id/ | grep -v part
+   ```
+2. Unmount any automounted partitions of the SSD:
+   ```bash
+   sudo umount /dev/sdX?* 2>/dev/null
+   ```
+3. Write the image:
+   ```bash
+   ISO=ubuntu_24.04_server_autoinstall_2026-10-20__16-05.iso
+   TARGET=/dev/disk/by-id/<your-ssd>
+   sudo dd if="$ISO" of="$TARGET" bs=4M status=progress oflag=direct conv=fsync
+   ```
+4. Verify the written data (no output means identical):
+   ```bash
+   sudo cmp -n "$(stat -c %s "$ISO")" "$ISO" "$TARGET"
+   ```
+5. Detach the SSD safely:
+   ```bash
+   udisksctl power-off -b "$TARGET"
+   ```
+
+Notes:
+- Everything on the SSD is lost.
+- Some tools afterwards warn that the backup GPT header is not at the end of the disk. The image is smaller than the SSD, so this is expected and harmless.
+- Make sure the SSD is the only disk in the target machine: the installer copies itself to RAM (`toram`) and then wipes the install disk without confirmation.
 
 
 > 🚨 **WARNING — This installer will erase the first found disk**
@@ -123,11 +160,23 @@ If you need to install packages or run first-boot setup, keep in mind cloud-init
 those steps are skipped and are *not* retried on later boots — anything that must
 survive a flaky first boot belongs in a retrying systemd unit, not in `runcmd`.
 
+# Tests
+
+`tests/run_tests.sh` checks release resolution against the real Ubuntu servers (only `SHA256SUMS` is downloaded, no ISOs), signature and checksum handling, offline behaviour, and a full build of a tiny test ISO signed with a throwaway key. It needs network access, `xorriso`, `gpg` and `gpgv`.
+
+```bash
+tests/run_tests.sh
+```
+
 # Add new ubuntu versions:
 
-Easy! See the array in `generate_autoinstall_iso.sh` and the desired versions. Don't forget to make a PR :)
+Easy! Add the codename and version to the array in `generate_autoinstall_iso.sh`. Point releases need no entry, they are resolved automatically. Don't forget to make a PR :)
 
 ```bash
 declare -A ubuntu_releases=(
+  # codename: release version
   [questing]="25.10"
-  [reso
+  [resolute]="26.04"
+  [stonking]="26.10"
+)
+```
