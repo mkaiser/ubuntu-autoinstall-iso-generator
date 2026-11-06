@@ -26,9 +26,48 @@ autoinstall:
         dhcp4-overrides:
           use-hostname: true  # accept hostname pushed by router's DHCP
 
+  early-commands:
+    # Pick the target disk by priority: NVMe > SSD > HDD (largest disk wins
+    # within the same class). Without this, subiquity simply takes the largest
+    # disk, i.e. a big HDD beats a smaller NVMe. The chosen device replaces the
+    # __TARGET_DISK__ placeholder in /autoinstall.yaml, which subiquity re-reads
+    # after early-commands. USB and removable disks are never considered.
+    - |
+      best=""; best_tier=9; best_size=0
+      for dev in /sys/block/*; do
+        name=$(basename "$dev")
+        case "$name" in loop*|ram*|zram*|sr*|fd*|dm-*|md*|nbd*|mmcblk*boot*) continue ;; esac
+        # hidden: NVMe multipath path nodes (nvme0c0n1), not usable directly
+        [ "$(cat "$dev/hidden" 2>/dev/null)" = "1" ] && continue
+        [ "$(cat "$dev/removable" 2>/dev/null)" = "1" ] && continue
+        case "$(readlink -f "$dev/device" 2>/dev/null)" in */usb*) continue ;; esac
+        size=$(cat "$dev/size" 2>/dev/null)
+        [ "${size:-0}" -gt 0 ] || continue
+        case "$name" in
+          nvme*) tier=1 ;;
+          *) if [ "$(cat "$dev/queue/rotational" 2>/dev/null)" = "0" ]; then tier=2; else tier=3; fi ;;
+        esac
+        echo "early-commands: candidate /dev/$name tier=$tier size=$((size / 2097152))GiB"
+        if [ "$tier" -lt "$best_tier" ] || { [ "$tier" -eq "$best_tier" ] && [ "$size" -gt "$best_size" ]; }; then
+          best="$name"; best_tier=$tier; best_size=$size
+        fi
+      done
+      if [ -z "$best" ]; then
+        echo "early-commands: no suitable target disk found" >&2
+        exit 1
+      fi
+      echo "early-commands: installing to /dev/$best"
+      if ! grep -q __TARGET_DISK__ /autoinstall.yaml; then
+        echo "early-commands: __TARGET_DISK__ placeholder missing in /autoinstall.yaml" >&2
+        exit 1
+      fi
+      sed -i "s|__TARGET_DISK__|/dev/$best|" /autoinstall.yaml
+
   storage:
     layout:
-      name: direct  # install to the first (only) available disk
+      name: direct
+      match:
+        path: __TARGET_DISK__  # replaced by early-commands: NVMe > SSD > HDD
 
   late-commands:
     # Set MAC-based hostname before first boot so the router sees it on the first DHCP request

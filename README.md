@@ -38,7 +38,7 @@ users:
 
 ## Step 2
 
-Invoke ./generate_autoinstall_iso.sh `<flavor>` `<version>` `[tty]` `[baudrate]` in the VScode terminal.
+Invoke ./generate_autoinstall_iso.sh `<version>` `<flavor>` `[tty]` `[baudrate]` in the VScode terminal.
 
   `version`  : codename (e.g. `questing`) or numeric (e.g. `25.10`)
 
@@ -52,18 +52,18 @@ After downloading the original iso, the patching progress will take around 2-4 m
 
 
 Example: 
-`./generate_autoinstall_iso.sh server 26.04 ttyS2` will create a timestamped ISO file in the root folder, e.g., `ubuntu_26.04_server_ttys2_autoinstall_2026-06-16__19-48.iso` 
+`./generate_autoinstall_iso.sh 26.04 server ttyS2` will create a timestamped ISO file in the `isos/` folder, e.g., `isos/ubuntu_26.04_server_ttys2_autoinstall_2026-06-16__19-48.iso` 
 
-`./generate_autoinstall_iso.sh server 26.04` (no tty) will create e.g. `ubuntu_26.04_server_autoinstall_2026-06-16__19-48.iso` with no serial console redirection.
+`./generate_autoinstall_iso.sh 26.04 server` (no tty) will create e.g. `isos/ubuntu_26.04_server_autoinstall_2026-06-16__19-48.iso` with no serial console redirection.
 
 ## Step 3
 
 Flash on USB or directly on M.2 SSD. I recommend `balena etcher` 
 
 
-> 🚨 **WARNING — This installer will erase the first found disk**
+> 🚨 **WARNING — This installer will erase the selected target disk**
 >
-> The autoinstall image is configured to erase the primary disk and install Ubuntu automatically. On first boot the installer is loaded into RAM from the boot device and will wipe the target drive. Carefully verify the correct target device before flashing or booting.
+> The autoinstall image is configured to erase the target disk (NVMe > SSD > HDD, see below) and install Ubuntu automatically. On first boot the installer is loaded into RAM from the boot device and will wipe the target drive. Carefully verify the correct target device before flashing or booting.
 >
 > Recommended checks before flashing or booting:
 > - Unplug other removable drives if possible to avoid accidental wipes.
@@ -71,10 +71,14 @@ Flash on USB or directly on M.2 SSD. I recommend `balena etcher`
 
 Storage config used by the installer:
 
+The target disk is chosen by an `early-commands` script in `user-data` by priority: **NVMe > SSD > HDD**. Within the same class the largest disk wins. USB and removable disks are never selected. The chosen device is written into the `__TARGET_DISK__` placeholder:
+
 ```yaml
 storage:
   layout:
-    name: direct  # install to the first (only) available disk
+    name: direct
+    match:
+      path: __TARGET_DISK__  # replaced by early-commands: NVMe > SSD > HDD
 ```
 
 ## Step 4 

@@ -36,6 +36,7 @@ declare -A ubuntu_releases=(
   [pinnacle]="25.04 25.04"
   [questing]="25.10 25.10"
   [resolute]="26.04 26.04"
+  [stonking]="26.10 26.10"
 )
 
 usage() {
@@ -85,14 +86,18 @@ case "$flavor" in
     exit 1
 esac
 
-source_iso="ubuntu-${newest_dot_release}-${iso_suffix}"
-source_iso_url="https://releases.ubuntu.com/${newest_dot_release}/${source_iso}"
-output_iso="ubuntu_${ubuntu_version}_${flavor}"
+download_dir="download"
+output_dir="isos"
+source_iso_name="ubuntu-${newest_dot_release}-${iso_suffix}"
+source_iso="${download_dir}/${source_iso_name}"
+source_iso_url="https://releases.ubuntu.com/${newest_dot_release}/${source_iso_name}"
+output_iso_name="ubuntu_${ubuntu_version}_${flavor}"
 if [[ -n "$console_tty" ]]; then
   console_tty_filename="$(printf '%s' "$console_tty" | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]')"
-  output_iso+="_${console_tty_filename}"
+  output_iso_name+="_${console_tty_filename}"
 fi
-output_iso+="_autoinstall_${timestamp}.iso"
+output_iso_name+="_autoinstall_${timestamp}.iso"
+output_iso="${output_dir}/${output_iso_name}"
 
 if ! command -v xorriso &>/dev/null; then
   echo "ERROR: xorriso not found. Install it with: sudo apt install xorriso"
@@ -102,6 +107,7 @@ fi
 echo "Generating autoinstall provisioning ISO at ${timestamp} (Ubuntu ${ubuntu_version} ${code_name} ${flavor})"
 
 # ── Step 1: Download source ISO (cached) ─────────────────────────────────────
+mkdir -p "$download_dir"
 if [[ ! -f "$source_iso" ]]; then
   echo "Downloading Ubuntu ${ubuntu_version} ${flavor} from ${source_iso_url} ..."
   wget --show-progress -O "$source_iso" "$source_iso_url"
@@ -110,7 +116,7 @@ else
 fi
 
 # ── Step 2: Set up work directory ────────────────────────────────────────────
-work_dir=$(mktemp -d "/tmp/trecs_iso_${output_iso}.XXXXXX")
+work_dir=$(mktemp -d "/tmp/trecs_iso_${output_iso_name}.XXXXXX")
 cleanup() { rm -rf "$work_dir"; }
 trap cleanup EXIT
 
@@ -172,6 +178,7 @@ touch "${work_dir}/nocloud/meta-data"
 # partition at its original offset/size. We replace it with the generic
 # 'appended_partition_2:::' form so xorriso resolves it against the newly
 # appended EFI partition image in the output ISO.
+mkdir -p "$output_dir"
 echo "Repacking ISO (this takes a while) ..."
 
 el_torito=$(xorriso -indev "$source_iso" -report_el_torito as_mkisofs 2>/dev/null | \

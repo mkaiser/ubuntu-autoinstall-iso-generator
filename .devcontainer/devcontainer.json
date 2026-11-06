@@ -1,7 +1,24 @@
 {
   "name": "trecs ISO builder",
-  "build": { "dockerfile": "Dockerfile" },
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
   "workspaceFolder": "/workspace",
-  "remoteUser": "root"
+  "remoteUser": "root",
+  // Named volume (not a bind mount): ~/.claude holds Claude Code session
+  // transcripts and auth, otherwise lost on every rebuild since it lives on
+  // the container's overlay fs. A named volume works the same on Windows
+  // Docker Desktop and native Linux Docker without a host path.
+  "mounts": [
+    // "source=git_infra-claude-home,target=/home/user/.claude,type=volume"
+    "source=${localEnv:USERPROFILE}\\.claude,target=/home/user/.claude,type=bind"
+  ],
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "Anthropic.claude-code"
+      ]
+    }
+  },
 }
